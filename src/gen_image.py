@@ -52,7 +52,7 @@ if __name__ == "__main__":
     # 每格的大小
     tile_size = (50, 50)  # 每格 50x50 像素
 
-    for t in range(1):
+    for t in range(10):
         grid = read_2d_array("../tmp/"+str(t)+".txt")
 
         # 輸出 BMP 格式圖片

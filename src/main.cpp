@@ -9,26 +9,108 @@ using namespace std;
 
 const int L = 20; // image size
 const int N = 100; // population
-const int G = 1000; // generation
+const int G = 5000; // generation
 const int K = 10;
-const int T = 1;
+const int T = 10;
 
 int pool[N][L][L], child[N][L][L];
 bool vis[L][L];
-int best, comp[N];
-double best_fit, fit[N];
+int best, pool_comp[N], child_comp[N];
+double best_fit = INT_MIN, pool_fit[N], child_fit[N];
 int dirs[9][2] = {{0,1}, {0,-1}, {-1, 0}, {1,0}, {0,0}, {1,1}, {-1,-1}, {-1,1}, {1,-1}};
 
 
+bool is_able(int n, int x, int y) {
+    return !vis[x][y] && x >= 0 && x < L && y >= 0 && y < L;
+}
+bool same_type(int type, int x) {
+    if (type == RIVER || type == RIVERSTONE) {
+        if (x == RIVER || x == RIVERSTONE) return true;
+        else return false;
+    }  else {
+        if (x == RIVER || x == RIVERSTONE) return false;
+        else return true;
+    }
+}
 
-void init() {
+int DFS(int type, int n, int x, int y, int &sz) {
+    vis[x][y] = 1;
+    sz++;
+    int res = 0;
+    if(child[n][x][y] == ROCK) res++;
+    for(int i = 0; i < 4; i++) {
+        int X = x + dirs[i][0], Y = y + dirs[i][1];
+        if(is_able(n, X, Y) && same_type(type, child[n][X][Y])) res += DFS(type, n, X, Y, sz);
+    }
+    return res;
+}
+
+
+void cal_fit() {
     for(int i = 0; i < N; i++) {
+        child_fit[i] = 0;
+        child_comp[i] = 0;
+        int  mx_sz = 0, mn_sz = INT_MAX;
         for(int j = 0; j < L; j++) {
             for(int k = 0; k < L; k++) {
-                pool[i][j][k] = rand() % 5;
+                vis[j][k] = 0;
+            }
+        }
+
+        for(int j = 0; j < L; j++) {
+            for(int k = 0; k < L; k++) {
+                int sz = 0;
+                if(is_able(i, j, k)) {
+                    double cnt_rock = DFS(child[i][j][k], i, j, k, sz);
+                    if(child[i][j][k] == GRASS || child[i][j][k] == ROCK || child[i][j][k] == MOUNTAIN) {
+                        child_comp[i]++;
+                        child_fit[i] -= max(0.0, 1.0/10*sz - cnt_rock);
+                        child_fit[i] -= max(0.0, cnt_rock-1.0/6*sz);
+                        child_fit[i] += sz;
+                    }
+                    mx_sz = max(sz, mx_sz);
+                    mn_sz = min(sz, mn_sz);
+                    if(sz < 4) child_fit[i] -= 50;
+                }
+            }
+        }
+        child_fit[i] -= 100*abs(child_comp[i]-5);
+        child_fit[i] -= (mx_sz - mn_sz);
+
+    }
+}
+
+void replace() {
+    for(int i = 0; i < N; i++) {
+        if(child_fit[i] < pool_fit[i]) continue;
+        for(int j = 0; j < L; j++) {
+            for(int k = 0; k < L; k++) {
+                pool[i][j][k] = child[i][j][k];
+                pool_fit[i] = child_fit[i];
+                pool_comp[i] = child_comp[i];
+                if(pool_fit[i] > best_fit) {
+                    best_fit = pool_fit[i];
+                    best = i;
+                }
             }
         }
     }
+}
+
+void init() {
+    best_fit = INT_MIN;
+    for(int i = 0; i < N; i++) {
+        pool_fit[i] = INT_MIN;
+    } 
+    for(int i = 0; i < N; i++) {
+        for(int j = 0; j < L; j++) {
+            for(int k = 0; k < L; k++) {
+                child[i][j][k] = rand() % 4;
+            }
+        }
+    }
+    cal_fit();
+    replace();
 }
 
 void crossover(int pair_id, int p1, int p2) {
@@ -48,12 +130,37 @@ void crossover(int pair_id, int p1, int p2) {
     }
 }
 
-void replace() {
+
+void mutation() {
     for(int i = 0; i < N; i++) {
-        if(i == best) continue;
-        for(int j = 0; j < L; j++) {
-            for(int k = 0; k < L; k++) {
-                pool[i][j][k] = child[i][j][k];
+        if(child_comp[i] < 5)  {
+            while(1) {
+                int x = rand() % L, y = rand() % L;
+                if(child[i][x][y] == RIVER || child[i][x][y] == RIVERSTONE) {
+                    for(int j = x; j < L; j++) {
+                        for(int k = y-2; k < y+2; k++) {
+                            if(j >= 0 && j < L && k >= 0 && k < L) child[i][j][k] = RIVER;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        if(child_comp[i] > 5)  {
+            while(1) {
+                int x = rand() % L, y = rand() % L;
+                // if(child[i][x][y] == GRASS || child[i][x][y] == ROCK) {
+                    for(int j = x-3; j < x+3; j++) {
+                        for(int k = y-3; k < y+3; k++) {
+                            if(j >= 0 && j < L && k >= 0 && k < L) {
+                                int z = rand() % 100;
+                                if(z < 95) child[i][j][k] = GRASS;
+                                else child[i][j][k] = ROCK;
+                            }
+                        }
+                    }
+                    break;
+                // }
             }
         }
     }
@@ -65,142 +172,22 @@ void run() {
         int mx = INT_MIN;
         for(int k = 0; k < K; k++) {
             int cand = rand() % N;
-            if (fit[cand] > mx) {
-                mx = fit[cand];
+            if (pool_fit[cand] > mx) {
+                mx = pool_fit[cand];
                 p1 = cand;
             }
         }
         mx = INT_MIN;
         for(int k = 0; k < K; k++) {
             int cand = rand() % N;
-            if (fit[cand] > mx) {
-                mx = fit[cand];
+            if (pool_fit[cand] > mx) {
+                mx = pool_fit[cand];
                 p2 = cand;
             }
         }
         crossover(i, p1, p2);
     }
-    replace();
-}
-
-bool is_able(int n, int x, int y) {
-    return !vis[x][y] && x >= 0 && x < L && y >= 0 && y < L;
-}
-bool same_type(int type, int x) {
-    if (type == RIVER || type == RIVERSTONE) {
-        if (x == RIVER || x == RIVERSTONE) return true;
-        else return false;
-    }  else {
-        if (x == RIVER || x == RIVERSTONE) return false;
-        else return true;
-    }
-}
-
-int DFS(int type, int n, int x, int y, int &sz) {
-    vis[x][y] = 1;
-    sz++;
-    int res = 0;
-    if(pool[n][x][y] == ROCK) res++;
-    for(int i = 0; i < 4; i++) {
-        int X = x + dirs[i][0], Y = y + dirs[i][1];
-        if(is_able(n, X, Y) && same_type(type, pool[n][X][Y])) res += DFS(type, n, X, Y, sz);
-    }
-    return res;
-}
-
-void cal_fit() {
-    best_fit = INT_MIN;
-    for(int i = 0; i < N; i++) {
-        fit[i] = 0;
-        comp[i] = 0;
-        int  mx_sz = 0, mn_sz = INT_MAX;
-        for(int j = 0; j < L; j++) {
-            for(int k = 0; k < L; k++) {
-                vis[j][k] = 0;
-            }
-        }
-
-        for(int j = 0; j < L; j++) {
-            for(int k = 0; k < L; k++) {
-                int sz = 0;
-                if(is_able(i, j, k)) {
-                    int cnt_rock = DFS(pool[i][j][k], i, j, k, sz);
-                    // if(pool[i][j][k] == GRASS || pool[i][j][k] == ROCK || pool[i][j][k] == MOUNTAIN) {
-                        comp[i]++;
-                        // fit[i] -= max(0, 1.0/6*sz - cnt_rock);
-                        // fit[i] -= max(0.0, cnt_rock-0.25*sz);
-                        // fit[i] += sz;
-                    // }
-                    mx_sz = max(sz, mx_sz);
-                    mn_sz = min(sz, mn_sz);
-                }
-            }
-        }
-
-        fit[i] -= 100*abs(comp[i]-5);
-        fit[i] -= (mx_sz - mn_sz);
-        
-        if (fit[i] > best_fit) {
-            best_fit = fit[i];
-            best = i;
-        }
-// cout << mx_sz << " " << mn_sz << endl;
-    }
-}
-
-void mutation() {
-    for(int i = 0; i < N; i++) {
-        if(best == i) continue;
-        if(comp[i] < 5)  {
-            while(1) {
-                int x = rand() % L, y = rand() % L;
-                if (pool[i][x][y] == RIVER || pool[i][x][y] == RIVERSTONE) {
-                    // int z = rand() % 4;
-                    // int X = x+dirs[z][0], Y = y+dirs[z][1];
-                    // if(X >= 0 && X < L && Y >= 0 && Y < L) {
-                    //     pool[i][X][Y] = RIVER;
-                    //     break;
-                    // }
-                    for(int k = 0; k < 9; k++) {
-                        int X = x+dirs[k][0], Y = dirs[k][1];
-                        if(X >= 0 && X < L && Y >= 0 && Y < L) {
-                            pool[i][X][Y] = RIVER;
-                        }
-                    }
-                    break;
-                }
-            }
-            
-        }
-        if(comp[i] > 5)  {
-            // int x = rand() % L, y = rand() % L;
-            // for(int k = 0; k < 9; k++) {
-            //     int X = x+dirs[k][0], Y = dirs[k][1];
-            //     pool[i][x][y] = GRASS;
-            //     if(X >= 0 && X < L && Y >= 0 && Y < L) {
-            //         int z = rand() % 10;
-            //         if(z <= 6) pool[i][X][Y] = GRASS;
-            //         else if (z == 9) pool[i][X][Y] = MOUNTAIN;
-            //         else pool[i][X][Y] = ROCK;
-            //     }
-            // }
-            while(1) {
-                int x = rand() % L, y = rand() % L;
-                if (pool[i][x][y] == GRASS || pool[i][x][y] == MOUNTAIN || pool[i][x][y] == ROCK) {
-                    for(int k = 0; k < 9; k++) {
-                        int X = x+dirs[k][0], Y = dirs[k][1];
-                        if(X >= 0 && X < L && Y >= 0 && Y < L) {
-                            int z = rand() % 10;
-                            if(z <= 6) pool[i][X][Y] = GRASS;
-                            else if (z == 9) pool[i][X][Y] = MOUNTAIN;
-                            else pool[i][X][Y] = ROCK;
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-    }
+    mutation();
 }
 
 void print(int t) {
@@ -220,15 +207,12 @@ int main(){
 
     for(int t = 0; t < T; t++) {
         init();
-        cal_fit();
         for(int g = 1; g < G; g++) {
             run();
             cal_fit();
-            mutation();
-            cal_fit();
+            replace();
         }
         print(t);
-        cout << comp[best] << endl;
         cout << best_fit << endl;
     }
 
