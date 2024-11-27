@@ -56,4 +56,10 @@ if __name__ == "__main__":
         grid = read_2d_array("../tmp/"+str(t)+".txt")
 
         # 輸出 BMP 格式圖片
-        create_image(grid, tile_images, tile_size, "../output/"+str(t)+".bmp", format="BMP")
+        create_image(grid, tile_images, tile_size, "../tmp/"+str(t)+".bmp", format="BMP")
+        bmp_image_path = "../tmp/"+str(t)+".bmp"
+
+        jpg_image_path = "../output/"+str(t)+".jpg"
+        image = Image.open(bmp_image_path).convert("RGB")
+        # 儲存為 JPG 格式
+        image.save(jpg_image_path, "JPEG")
